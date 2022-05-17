@@ -1,0 +1,288 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "String",
+      "allowedValues": [
+        "West US",
+        "West US 2",
+        "East US",
+        "East US 2",
+        "North Europe",
+        "West Europe",
+        "South East Asia",
+        "East Asia",
+        "North Central US",
+        "South Central US",
+        "Japan West",
+        "Japan East",
+        "Korea South",
+        "Korea Central",
+        "South Africa North",
+        "South Africa South",
+        "France Central",
+        "Australia East",
+        "Australia South East",
+        "Brazil South",
+        "West India",
+        "South India",
+        "Central India",
+        "Central US",
+        "West Central US",
+        "Canada Central",
+        "UK South"
+      ],
+      "metadata": {
+        "description": "The location into which these resources are to be deployed."
+      }
+    },
+    "storageAccountPrefix": {
+      "defaultValue": "funcappstrg",
+      "type": "String",
+      "minLength": 3,
+      "maxLength": 24
+    },
+    "storageAccountType": {
+      "type": "String",
+      "defaultValue": "Standard_GRS",
+      "allowedValues": [ "Standard_LRS", "Standard_GRS", "Standard_RAGRS" ],
+      "metadata": {
+        "description": "Storage Account type"
+      }
+    },
+    "functionAppPrefix": {
+      "defaultValue": "IntergenEventToolsFunctions",
+      "type": "String"
+    },
+    "appInsightsProductionName": {
+      "defaultValue": "AppInsights-IntergenEventToolsFunctions20200827144314",
+      "type": "String"
+    },
+    "appInsightsStagingName": {
+      "defaultValue": "AppInsights-IntergenEventToolsFunctions-Staging-20200827144314",
+      "type": "String"
+    },
+    "serviceBusConnection": {
+      "type": "string"
+    },
+    "cosmosDbConnection": {
+      "type": "string"
+    },
+    "EventName": {
+      "type": "string"
+    },
+    "EventAttendeeQueue": {
+      "type": "string"
+    },
+    "EventAttendeeServiceBusTopic": {
+      "type": "string"
+    },
+    "CosmosDBName": {
+      "type": "string"
+    },
+    "CosmosDBCollectionName": {
+      "type": "string"
+    },
+    "CosmosDBPartitionKey": {
+      "type": "string"
+    },
+    "CosmosQueryGetAllRecordIds": {
+      "type": "string"
+    },
+    "PdcProfileUpdateQueue": {
+      "type": "string"
+    },
+    "UserConsentCosmosDBCollectionName": {
+      "type": "string"
+    },
+    "UserConsentDBPartitionKey": {
+      "type": "string"
+    },
+    "UserConsentReportQueue": {
+      "type": "string"
+    },
+    "SHARED_KEY_VAULT_NAME": {
+      "type": "string"
+    },
+    "EVENT_KEY_VAULT_NAME": {
+      "type": "string"
+    }
+  },
+    "variables": {
+        "storageAccountName": "[concat(parameters('storageAccountPrefix'), 'rec')]",
+        "functionAppName": "[concat(parameters('functionAppPrefix'), uniqueString(resourceGroup().id))]",
+        "functionAppHostingPlanName": "[concat(replace(parameters('location'), ' ', '-'), '-functions-plan')]"
+    },
+  "resources": [
+    {
+      "type": "microsoft.insights/components",
+      "kind": "web",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[parameters('appInsightsProductionName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "ApplicationId": "[parameters('appInsightsProductionName')]",
+        "Application_Type": "web",
+        "Request_Source": "rest"
+      }
+    },
+    {
+      "type": "microsoft.insights/components",
+      "kind": "web",
+      "apiVersion": "2018-05-01-preview",
+      "name": "[parameters('appInsightsStagingName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "ApplicationId": "[parameters('appInsightsStagingName')]",
+        "Application_Type": "web",
+        "Request_Source": "rest"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2019-06-01",
+      "name": "[variables('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('storageAccountType')]"
+      },
+      "kind": "Storage"
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2018-02-01",
+      "name": "[variables('functionAppHostingPlanName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      },
+      "properties": {
+        "name": "[variables('functionAppHostingPlanName')]",
+        "computeMode": "Dynamic"
+      }
+    },
+    {
+      "apiVersion": "2018-11-01",
+      "type": "Microsoft.Web/sites",
+      "name": "[variables('functionAppName')]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', variables('functionAppHostingPlanName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+      ],
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('functionAppHostingPlanName'))]"
+      },
+      "resources": [
+        {
+          "name": "slotConfigNames",
+          "type": "config",
+          "apiVersion": "2018-11-01",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+          ],
+          "tags": {
+            "displayName": "slotConfigNames"
+          },
+          "properties": {
+            "appSettingNames": [ "APPINSIGHTS_INSTRUMENTATIONKEY", "ServiceBusConnection", "CosmosDBConnection", "AzureWebJobsStorage", "EventAttendeeQueue", "EventAttendeeServiceBusTopic", "PdcProfileUpdateQueue" ]
+          }
+        },
+        {
+          "apiVersion": "2018-11-01",
+          "name": "appsettings",
+          "type": "config",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
+            "[resourceId('Microsoft.Insights/components', parameters('appInsightsProductionName'))]"
+          ],
+          "properties": {
+            "ServiceBusConnection": "[parameters('serviceBusConnection')]",
+            "CosmosDBConnection": "[parameters('cosmosDbConnection')]",
+            "AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]",
+            "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]",
+            "WEBSITE_CONTENTSHARE": "[toLower(variables('functionAppName'))]",
+            "FUNCTIONS_EXTENSION_VERSION": "~3",
+            "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+            "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('microsoft.insights/components', parameters('appInsightsProductionName')), '2018-05-01-preview').InstrumentationKey]",
+            "EventName": "[parameters('EventName')]",
+            "EventAttendeeQueue": "[parameters('EventAttendeeQueue')]",
+            "EventAttendeeServiceBusTopic": "[parameters('EventAttendeeServiceBusTopic')]",
+            "CosmosDBName": "[parameters('CosmosDBName')]",
+            "CosmosDBCollectionName": "[parameters('CosmosDBCollectionName')]",
+            "CosmosDBPartitionKey": "[parameters('CosmosDBPartitionKey')]",
+            "CosmosQueryGetAllRecordIds": "[parameters('CosmosQueryGetAllRecordIds')]",
+            "PdcProfileUpdateQueue": "[parameters('PdcProfileUpdateQueue')]",
+            "UserConsentCosmosDBCollectionName": "[parameters('UserConsentCosmosDBCollectionName')]",
+            "UserConsentDBPartitionKey": "[parameters('UserConsentDBPartitionKey')]",
+            "UserConsentReportQueue": "[parameters('UserConsentReportQueue')]",
+            "SHARED_KEY_VAULT_NAME": "[parameters('SHARED_KEY_VAULT_NAME')]",
+            "EVENT_KEY_VAULT_NAME": "[parameters('EVENT_KEY_VAULT_NAME')]"
+          }
+        },
+        {
+          "name": "[concat(variables('functionAppName'), '/staging')]",
+          "type": "Microsoft.Web/sites/slots",
+          "apiVersion": "2020-06-01",
+          "kind": "functionapp",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/serverfarms', variables('functionAppHostingPlanName'))]",
+            "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+            "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]",
+            "[resourceId('Microsoft.Insights/components', parameters('appInsightsStagingName'))]"
+          ],
+          "location": "[parameters('location')]",
+          "properties": {
+            "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('functionAppHostingPlanName'))]"
+          },
+          "resources": [
+            {
+              "apiVersion": "2015-08-01",
+              "name": "appsettings",
+              "type": "config",
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites/slots', variables('functionAppName'), 'staging')]",
+                "[resourceId('Microsoft.Insights/components', parameters('appInsightsStagingName'))]"
+              ],
+              "properties": {
+                "CosmosDBConnection": "[parameters('cosmosDbConnection')]",
+                "AzureWebJobsStorage": "",
+                "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]",
+                "WEBSITE_CONTENTSHARE": "[toLower(variables('functionAppName'))]",
+                "FUNCTIONS_EXTENSION_VERSION": "~3",
+                "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+                "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('microsoft.insights/components', parameters('appInsightsStagingName')), '2018-05-01-preview').InstrumentationKey]",
+                "EventName": "[parameters('EventName')]",
+                "EventAttendeeQueue": "[concat(parameters('EventAttendeeQueue'), '-staging')]",
+                "EventAttendeeServiceBusTopic": "[concat(parameters('EventAttendeeServiceBusTopic'), '-staging')]",
+                "CosmosDBName": "[parameters('CosmosDBName')]",
+                "CosmosDBCollectionName": "[parameters('CosmosDBCollectionName')]",
+                "CosmosDBPartitionKey": "[parameters('CosmosDBPartitionKey')]",
+                "CosmosQueryGetAllRecordIds": "[parameters('CosmosQueryGetAllRecordIds')]",
+                "PdcProfileUpdateQueue": "[concat(parameters('PdcProfileUpdateQueue'), '-staging')]",
+                "UserConsentCosmosDBCollectionName": "[parameters('UserConsentCosmosDBCollectionName')]",
+                "UserConsentDBPartitionKey": "[parameters('UserConsentDBPartitionKey')]",
+                "UserConsentReportQueue": "[parameters('UserConsentReportQueue')]",
+                "SHARED_KEY_VAULT_NAME": "[parameters('SHARED_KEY_VAULT_NAME')]",
+                "EVENT_KEY_VAULT_NAME": "[parameters('EVENT_KEY_VAULT_NAME')]"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "outputs": {
+    "storageAccountEndpoints": {
+      "type": "object",
+      "value": "[reference(variables('storageAccountName')).primaryEndpoints]"
+    },
+    "functionAppName": {
+      "type": "String",
+      "value": "[variables('functionAppName')]"
+    }
+  }
+}

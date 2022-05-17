@@ -1,0 +1,319 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "String",
+      "allowedValues": [
+        "West US",
+        "West US 2",
+        "East US",
+        "East US 2",
+        "North Europe",
+        "West Europe",
+        "South East Asia",
+        "East Asia",
+        "North Central US",
+        "South Central US",
+        "Japan West",
+        "Japan East",
+        "Korea South",
+        "Korea Central",
+        "South Africa North",
+        "South Africa South",
+        "France Central",
+        "Australia East",
+        "Australia South East",
+        "Brazil South",
+        "West India",
+        "South India",
+        "Central India",
+        "Central US",
+        "West Central US",
+        "Canada Central",
+        "UK South"
+      ],
+      "metadata": {
+        "description": "The location into which these resources are to be deployed."
+      }
+    },
+    "environmentName": {
+      "type": "String",
+      "minLength": 2,
+      "maxLength": 4
+    },
+    "appInsightsKey": {
+      "type": "String"
+    },
+    "storageAccountPrefix": {
+      "defaultValue": "func",
+      "type": "String",
+      "minLength": 3,
+      "maxLength": 7
+    },
+    "storageAccountType": {
+      "type": "String",
+      "defaultValue": "Standard_GRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_GRS",
+        "Standard_RAGRS"
+      ],
+      "metadata": {
+        "description": "Storage Account type"
+      }
+    },
+    "functionAppPrefix": {
+      "defaultValue": "AttendeeIndexerFunctions",
+      "type": "String"
+    },
+    "serviceBusConnection": {
+      "type": "string"
+    },
+    "EventName": {
+      "type": "string"
+    },
+    "ServiceBusSubscriptionName": {
+      "type": "string"
+    },
+    "EventAttendeeServiceBusTopic": {
+      "type": "string"
+    },
+    "ProgramIndexPrefix": {
+      "type": "string"
+    },
+    "IndexPrefix": {
+      "type": "string"
+    },
+    "AttendeeSearchIndexName": {
+      "type": "string"
+    },
+    "CityName": {
+      "type": "string"
+    },
+    "DeploymentEnvironment": {
+      "type": "string"
+    },
+    "SessionSpeakerQueue": {
+      "type": "string"
+    },
+    "SessionSearchIndexName": {
+      "type": "string"
+    },
+    "SpeakerSearchIndexName": {
+      "type": "string"
+    },
+    "CompanySearchIndexName": {
+      "type": "string"
+    },
+    "PublicSearchServiceName": {
+      "type": "string"
+    },
+    "PublicSearchIndexApiKey": {
+      "type": "string"
+    },
+    "DbSettingsDatabaseName": {
+      "type": "string"
+    },
+    "DbSettingsStoreName": {
+      "type": "string"
+    },
+    "DbSettingsDocId": {
+      "type": "string"
+    },
+    "DbSettingsPartitionKey": {
+      "type": "string"
+    },
+    "DbSettingsTimeoutInSeconds": {
+      "type": "int"
+    },
+    "DbSettingsEnabledForLocal": {
+      "type": "bool"
+    },
+    "DbSettingsFileName": {
+      "type": "string"
+    },
+    "IsUsingTestData": {
+      "type": "bool"
+    },
+    "SHARED_KEY_VAULT_NAME": {
+      "type": "string"
+    },
+    "EVENT_KEY_VAULT_NAME": {
+      "type": "string"
+    }
+  },
+    "variables": {
+        "storageAccountName": "[concat(replace(parameters('storageAccountPrefix'), ' ', ''), parameters('environmentName'), 'funcstorageidx')]",
+        "functionAppName": "[concat(parameters('functionAppPrefix'), parameters('environmentName'), uniqueString(resourceGroup().id))]",
+        "functionAppHostingPlanName": "[concat(replace(parameters('location'), ' ', '-'), '-functions-plan')]"
+    },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2019-06-01",
+      "name": "[variables('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('storageAccountType')]"
+      },
+      "kind": "Storage"
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2018-02-01",
+      "name": "[variables('functionAppHostingPlanName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      },
+      "properties": {
+        "name": "[variables('functionAppHostingPlanName')]",
+        "computeMode": "Dynamic"
+      }
+    },
+    {
+      "apiVersion": "2018-11-01",
+      "type": "Microsoft.Web/sites",
+      "name": "[variables('functionAppName')]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', variables('functionAppHostingPlanName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+      ],
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('functionAppHostingPlanName'))]"
+      },
+      "resources": [
+        {
+          "name": "slotConfigNames",
+          "type": "config",
+          "apiVersion": "2018-11-01",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+          ],
+          "tags": {
+            "displayName": "slotConfigNames"
+          },
+          "properties": {
+            "appSettingNames": [
+              "ServiceBusConnection",
+              "AzureWebJobsStorage",
+              "EventAttendeeServiceBusTopic"
+            ]
+          }
+        },
+        {
+          "apiVersion": "2018-11-01",
+          "name": "appsettings",
+          "type": "config",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+          ],
+          "properties": {
+            "ServiceBusConnection": "[parameters('serviceBusConnection')]",
+            "AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]",
+            "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]",
+            "WEBSITE_CONTENTSHARE": "[toLower(variables('functionAppName'))]",
+            "FUNCTIONS_EXTENSION_VERSION": "~3",
+            "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+            "APPINSIGHTS_INSTRUMENTATIONKEY": "[parameters('appInsightsKey')]",
+            "EventName": "[parameters('EventName')]",
+            "ServiceBusSubscriptionName": "[parameters('ServiceBusSubscriptionName')]",
+            "EventAttendeeServiceBusTopic": "[parameters('EventAttendeeServiceBusTopic')]",
+            "ProgramIndexPrefix": "[parameters('ProgramIndexPrefix')]",
+            "IndexPrefix": "[parameters('IndexPrefix')]",
+            "AttendeeSearchIndexName": "[parameters('AttendeeSearchIndexName')]",
+            "CityName": "[parameters('CityName')]",
+            "DeploymentEnvironment": "[parameters('DeploymentEnvironment')]",
+            "SessionSpeakerQueue": "[parameters('SessionSpeakerQueue')]",
+            "SessionSearchIndexName": "[parameters('SessionSearchIndexName')]",
+            "SpeakerSearchIndexName": "[parameters('SpeakerSearchIndexName')]",
+            "CompanySearchIndexName": "[parameters('CompanySearchIndexName')]",
+            "PublicSearchServiceName": "[parameters('PublicSearchServiceName')]",
+            "PublicSearchIndexApiKey": "[parameters('PublicSearchIndexApiKey')]",
+            "DbSettingsDatabaseName": "[parameters('DbSettingsDatabaseName')]",
+            "DbSettingsStoreName": "[parameters('DbSettingsStoreName')]",
+            "DbSettingsDocId": "[parameters('DbSettingsDocId')]",
+            "DbSettingsPartitionKey": "[parameters('DbSettingsPartitionKey')]",
+            "DbSettingsTimeoutInSeconds": "[parameters('DbSettingsTimeoutInSeconds')]",
+            "DbSettingsEnabledForLocal": "[parameters('DbSettingsEnabledForLocal')]",
+            "DbSettingsFileName": "[parameters('DbSettingsFileName')]",
+            "SHARED_KEY_VAULT_NAME": "[parameters('SHARED_KEY_VAULT_NAME')]",
+            "EVENT_KEY_VAULT_NAME": "[parameters('EVENT_KEY_VAULT_NAME')]",
+            "IsUsingTestData": "[parameters('IsUsingTestData')]"
+          }
+        },
+        {
+          "name": "[concat(variables('functionAppName'), '/staging')]",
+          "type": "Microsoft.Web/sites/slots",
+          "apiVersion": "2020-06-01",
+          "kind": "functionapp",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/serverfarms', variables('functionAppHostingPlanName'))]",
+            "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+            "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+          ],
+          "location": "[parameters('location')]",
+          "properties": {
+            "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('functionAppHostingPlanName'))]"
+          },
+          "resources": [
+            {
+              "apiVersion": "2015-08-01",
+              "name": "appsettings",
+              "type": "config",
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites/slots', variables('functionAppName'), 'staging')]"
+              ],
+              "properties": {
+                "AzureWebJobsStorage": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]",
+                "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2019-06-01').keys[0].value)]",
+                "WEBSITE_CONTENTSHARE": "[toLower(variables('functionAppName'))]",
+                "FUNCTIONS_EXTENSION_VERSION": "~3",
+                "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+                "APPINSIGHTS_INSTRUMENTATIONKEY": "[parameters('appInsightsKey')]",
+                "EventName": "[parameters('EventName')]",
+                "ServiceBusSubscriptionName": "[parameters('ServiceBusSubscriptionName')]",
+                "EventAttendeeServiceBusTopic": "[concat(parameters('EventAttendeeServiceBusTopic'), '-staging')]",
+                "ProgramIndexPrefix": "[parameters('ProgramIndexPrefix')]",
+                "IndexPrefix": "[parameters('IndexPrefix')]",
+                "AttendeeSearchIndexName": "[parameters('AttendeeSearchIndexName')]",
+                "CityName": "[parameters('CityName')]",
+                "DeploymentEnvironment": "[parameters('DeploymentEnvironment')]",
+                "SessionSpeakerQueue": "[parameters('SessionSpeakerQueue')]",
+                "SessionSearchIndexName": "[parameters('SessionSearchIndexName')]",
+                "SpeakerSearchIndexName": "[parameters('SpeakerSearchIndexName')]",
+                "CompanySearchIndexName": "[parameters('CompanySearchIndexName')]",
+                "PublicSearchServiceName": "[parameters('PublicSearchServiceName')]",
+                "PublicSearchIndexApiKey": "[parameters('PublicSearchIndexApiKey')]",
+                "DbSettingsDatabaseName": "[parameters('DbSettingsDatabaseName')]",
+                "DbSettingsStoreName": "[parameters('DbSettingsStoreName')]",
+                "DbSettingsDocId": "[parameters('DbSettingsDocId')]",
+                "DbSettingsPartitionKey": "[parameters('DbSettingsPartitionKey')]",
+                "DbSettingsTimeoutInSeconds": "[parameters('DbSettingsTimeoutInSeconds')]",
+                "DbSettingsEnabledForLocal": "[parameters('DbSettingsEnabledForLocal')]",
+                "DbSettingsFileName": "[parameters('DbSettingsFileName')]",
+                "SHARED_KEY_VAULT_NAME": "[parameters('SHARED_KEY_VAULT_NAME')]",
+                "EVENT_KEY_VAULT_NAME": "[parameters('EVENT_KEY_VAULT_NAME')]",
+                "IsUsingTestData": "[parameters('IsUsingTestData')]"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "outputs": {
+    "storageAccountEndpoints": {
+      "type": "object",
+      "value": "[reference(variables('storageAccountName')).primaryEndpoints]"
+    },
+    "functionAppName": {
+      "type": "String",
+      "value": "[variables('functionAppName')]"
+    }
+  }
+}

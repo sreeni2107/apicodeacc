@@ -1,0 +1,99 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "West US"
+    },
+    "storageAccountPrefix": {
+      "value": null
+    },
+    "storageAccountType": {
+      "value": null
+    },
+    "functionAppPrefix": {
+      "value": null
+    },
+    "environmentName": {
+      "value": null
+    },
+    "appInsightsKey": {
+      "value": null
+    },
+    "serviceBusConnection": {
+      "value": null
+    },
+    "EventName": {
+      "value": null
+    },
+    "IsUsingTestData": {
+      "value": null
+    },
+    "ServiceBusSubscriptionName": {
+      "value": null
+    },
+    "EventAttendeeServiceBusTopic": {
+      "value": null
+    },
+    "ProgramIndexPrefix": {
+      "value": null
+    },
+    "IndexPrefix": {
+      "value": null
+    },
+    "AttendeeSearchIndexName": {
+      "value": null
+    },
+    "CityName": {
+      "value": null
+    },
+    "DeploymentEnvironment": {
+      "value": null
+    },
+    "SessionSpeakerQueue": {
+      "value": null
+    },
+    "SessionSearchIndexName": {
+      "value": null
+    },
+    "SpeakerSearchIndexName": {
+      "value": null
+    },
+    "CompanySearchIndexName": {
+      "value": null
+    },
+    "PublicSearchServiceName": {
+      "value": null
+    },
+    "PublicSearchIndexApiKey": {
+      "value": null
+    },
+    "DbSettingsDatabaseName": {
+      "value": null
+    },
+    "DbSettingsStoreName": {
+      "value": null
+    },
+    "DbSettingsDocId": {
+      "value": null
+    },
+    "DbSettingsPartitionKey": {
+      "value": null
+    },
+    "DbSettingsTimeoutInSeconds": {
+      "value": null
+    },
+    "DbSettingsEnabledForLocal": {
+      "value": null
+    },
+    "DbSettingsFileName": {
+      "value": null
+    },
+    "SHARED_KEY_VAULT_NAME": {
+      "value": null
+    },
+    "EVENT_KEY_VAULT_NAME": {
+      "value": null
+    }
+  }
+}

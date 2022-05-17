@@ -1,0 +1,256 @@
+# ASP.NET Core Build and deploy multistage pipeline
+trigger:
+  branches:
+   include:
+     - main
+  paths:
+    include:
+    - .azure-cd-tier-one-envision-2021-receiver-functions.yml
+    - jobs/*
+    - scripts/*
+    - functions/*
+    - src/Intergen.EventTools.Core/*
+    - src/MSCorp.EventTools.DTA.Core/*
+    - src/MSCorp.EventTools.Ignite.Core/*
+    - src/MSCorp.EventTools.Inspire.Core/*
+    - src/MSCorp.EventTools.Include.Core/*
+    - src/MSCorp.EventTools.MBAS.Core/*
+    - src/MSCorp.EventTools.Build.Core/*
+    - src/MSCorp.EventTools.Envision.Core/*
+    - src/MSCorp.EventTools.Providers.EventCore.PDC/*
+    - src/MSCorp.EventTools.Providers.EventPoint/*
+    - src/MSCorp.Ignite.Common/*
+    - src/MSCorp.Ignite.Core/*
+    - src/MSCorp.Ignite.Domain/*
+
+variables:
+  - group: Envision2021-Env-PROD
+  - group: GlobalKeyVaultSettings
+  - name: buildConfiguration
+    value: 'Release'
+
+stages:
+- stage: Build
+  displayName: Build
+  jobs:
+  - job:
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - script: dotnet clean functions/Intergen.EventTools.Functions.sln
+        displayName: 'dotnet clean'
+      - script: dotnet restore functions/Intergen.EventTools.Functions.sln
+        displayName: 'dotnet restore'
+      - task: DotNetCoreCLI@2
+        displayName: dotnet publish
+        inputs:
+          command: 'publish'
+          publishWebProjects: false
+          projects: '**/Intergen.EventTools.Functions.csproj'
+          arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+          zipAfterPublish: true
+      - task: CopyFiles@2
+        displayName: Write scripts to artifacts
+        inputs:
+          SourceFolder: '$(System.DefaultWorkingDirectory)/scripts'
+          Contents: '**'
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/scripts'
+          OverWrite: true
+      - task: CopyFiles@2
+        displayName: Write templates to artifacts
+        inputs:
+          SourceFolder: '$(System.DefaultWorkingDirectory)/functions/Intergen.EventTools.FunctionApps/Deploy'
+          Contents: '*.json'
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/templates'
+          OverWrite: true
+      - task: PublishBuildArtifacts@1
+        displayName: 'Publish Artifact: drop'
+
+- stage: release_staging_reciever
+  displayName: Release Staging Webhook Receiver
+  dependsOn: Build
+  variables:
+    - group: Envision2021-Env-PROD
+  jobs:
+  - deployment: deploy_prod_reciever
+    displayName: Deploy prod Webhook
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: envision-2021-prod
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - task: AzureCLI@2
+              name: ensure_rg
+              displayName: Ensure Resource Group
+              inputs:
+                azureSubscription: $(azure-subscription)
+                scriptType: 'bash'
+                scriptLocation: 'scriptPath'
+                scriptPath: '$(Pipeline.Workspace)/drop/scripts/az-ensure-empty-resourcegroup.sh'
+                arguments: '$(resource-group-reciever-function) "$(resource-group-location)"'
+                failOnStandardError: true
+            - task: AzureResourceManagerTemplateDeployment@3
+              inputs:
+                deploymentScope: 'Resource Group'
+                azureResourceManagerConnection: $(azure-subscription)
+                subscriptionId: 'b33184e1-debd-4fd4-a7d9-e3d339e066a1'
+                action: 'Create Or Update Resource Group'
+                resourceGroupName: '$(resource-group-reciever-function)'
+                location: '$(resource-group-location)'
+                templateLocation: 'Linked artifact'
+                csmFile: '$(Pipeline.Workspace)/drop/templates/event-tools-function-azuredeploy.json'
+                overrideParameters: '-location "$(resource-group-location)" -storageAccountType Standard_GRS -functionAppPrefix $(site-name)-receiver-$(environment) -appInsightsProductionName $(site-name)-receiver-$(environment) -appInsightsStagingName $(site-name)-receiver-$(environment)staging  -storageAccountPrefix $(function-storage-prefix) -cosmosDbConnection $(DocumentDbConnectionString) -serviceBusConnection $(AttendeeIndexingServiceBusConnection) -EventName "$(eventName)" -EventAttendeeQueue "$(eventAttendeeQueue-test)" -EventAttendeeServiceBusTopic "$(eventAttendeeServiceBusTopic-test)" -CosmosDBName "$(cosmosDBName)" -CosmosDBCollectionName "$(cosmosDBCollectionNameAttendeeIndexing-test)" -CosmosDBPartitionKey "$(cosmosDBPartitionKeyAttendeeIndexing)" -CosmosQueryGetAllRecordIds "$(cosmosQueryAttendeeReindexing)" -PdcProfileUpdateQueue "$(appsetting.PdcProfileUpdateQueueName)" -UserConsentCosmosDBCollectionName "$(UserConsentCosmosDBCollectionName)" -UserConsentDBPartitionKey "$(UserConsentDBPartitionKey)" -UserConsentReportQueue "$(appsetting.ConsentReportQueueName)" -SHARED_KEY_VAULT_NAME "$(SHARED_KEY_VAULT)" -EVENT_KEY_VAULT_NAME "$(EVENT_KEY_VAULT)"'
+                deploymentMode: 'Incremental'
+                deploymentOutputs: 'arm-output'
+
+            - task: PowerShell@2
+              displayName: Read functionAppName from arm output
+              inputs:
+                targetType: 'inline'
+                script: |
+                  function parse {
+                    param(
+                      [string]$json
+                    )
+                    $outputs = $json | ConvertFrom-Json
+                    $functionAppName = $outputs.'functionAppName'.value
+                    Write-Host "##vso[task.setvariable variable=arm-out-functionAppName]$functionAppName"
+                  }
+
+                  parse @"
+                  $(arm-output)
+                  "@
+                pwsh: true
+
+            - task: AzureCLI@2
+              displayName: 'Azure CLI  Assign Key Vault permissions'
+              inputs:
+                azureSubscription: '$(azure-subscription)'
+                scriptType: pscore
+                scriptLocation: inlineScript
+                inlineScript: |
+                  $RESOURCE_GROUP = "$(resource-group-reciever-function)"
+                  $SITE_NAME = "$(arm-out-functionAppName)"
+                  $SHARED_KEY_VAULT = "$(SHARED_KEY_VAULT)"
+                  $EVENT_KEY_VAULT = "$(EVENT_KEY_VAULT)"
+                  # assign a managed identity to the site & give it access to read KeyVault Secrets
+                  $principal = az webapp identity assign --resource-group $RESOURCE_GROUP --name $SITE_NAME | ConvertFrom-Json
+                  az keyvault set-policy --name $SHARED_KEY_VAULT --object-id $principal.principalId --secret-permissions get list
+
+                  az keyvault set-policy --name $EVENT_KEY_VAULT --object-id $principal.principalId --secret-permissions get list
+
+
+                  $principal = az webapp identity assign --resource-group $RESOURCE_GROUP --name $SITE_NAME --slot staging | ConvertFrom-Json
+                  az keyvault set-policy --name $SHARED_KEY_VAULT --object-id $principal.principalId --secret-permissions get list
+
+                  az keyvault set-policy --name $EVENT_KEY_VAULT --object-id $principal.principalId --secret-permissions get list
+
+                addSpnToEnvironment: true
+                useGlobalConfig: true
+            - task: AzureFunctionApp@1
+              inputs:
+                azureSubscription: $(azure-subscription)
+                appType: 'functionApp'
+                appName: '$(arm-out-functionAppName)'
+                deployToSlotOrASE: true
+                resourceGroupName: '$(resource-group-reciever-function)'
+                slotName: 'staging'
+                package: '$(Pipeline.Workspace)/drop/*.zip'
+                deploymentMethod: 'zipDeploy'
+            - task: AzureAppServiceManage@0
+              inputs:
+                azureSubscription: $(azure-subscription)
+                Action: 'Swap Slots'
+                WebAppName: '$(arm-out-functionAppName)'
+                ResourceGroupName: '$(resource-group-reciever-function)'
+                SourceSlot: 'staging'
+
+#- stage: release_prod_receiver
+#  displayName: Release Prod Webhook Receiver
+#  dependsOn: Build
+#  variables:
+#    - group: Envision2021-Env-Prod
+#  jobs:
+#  - deployment: deploy_prod_reciever
+#    displayName: Deploy prod Webhook
+#    pool:
+#      vmImage: 'ubuntu-latest'
+#    environment: envision-2021-prod
+#    strategy:
+#      runOnce:
+#        deploy:
+#          steps:
+#            - task: AzureCLI@2
+#              name: ensure_rg
+#              displayName: Ensure Resource Group
+#              inputs:
+#                azureSubscription: $(azure-subscription)
+#                scriptType: 'bash'
+#                scriptLocation: 'scriptPath'
+#                scriptPath: '$(Pipeline.Workspace)/drop/scripts/az-ensure-empty-resourcegroup.sh'
+#                arguments: '$(resource-group-reciever-function) "$(resource-group-location)"'
+#                failOnStandardError: true
+#            - task: AzureResourceManagerTemplateDeployment@3
+#              inputs:
+#                deploymentScope: 'Resource Group'
+#                azureResourceManagerConnection: $(azure-subscription)
+#                subscriptionId: '8d4f0f59-30a1-4912-86f4-28b59b7dbf13'
+#                action: 'Create Or Update Resource Group'
+#                resourceGroupName: '$(resource-group-reciever-function)'
+#                location: '$(resource-group-location)'
+#                templateLocation: 'Linked artifact'
+#                csmFile: '$(Pipeline.Workspace)/drop/templates/event-tools-function-azuredeploy.json'
+#                overrideParameters: '-location "$(resource-group-location)" -storageAccountType Standard_GRS -functionAppPrefix $(site-name)-receiver-$(environment) -appInsightsProductionName $(site-name)-receiver-$(environment) -appInsightsStagingName $(site-name)-receiver-$(environment)staging  -storageAccountPrefix $(function-storage-prefix) -cosmosDbConnection $(DocumentDbConnectionString) -serviceBusConnection $(AttendeeIndexingServiceBusConnection) -EventName "$(eventName)" -EventAttendeeQueue "$(eventAttendeeQueue)" -EventAttendeeServiceBusTopic "$(eventAttendeeServiceBusTopic)" -CosmosDBName "$(cosmosDBName)" -CosmosDBCollectionName "$(cosmosDBCollectionNameAttendeeIndexing)" -CosmosDBPartitionKey "$(cosmosDBPartitionKeyAttendeeIndexing)" -CosmosQueryGetAllRecordIds "$(cosmosQueryAttendeeReindexing)" -PdcProfileUpdateQueue "$(appsetting.PdcProfileUpdateQueueName)" -UserConsentCosmosDBCollectionName "$(UserConsentCosmosDBCollectionName)" -UserConsentDBPartitionKey "$(UserConsentDBPartitionKey)" -UserConsentReportQueue "$(appsetting.ConsentReportQueueName)" -SHARED_KEY_VAULT_NAME "$(SHARED_KEY_VAULT)" -EVENT_KEY_VAULT_NAME "$(EVENT_KEY_VAULT)"'
+#                deploymentMode: 'Incremental'
+#            - task: ARM Outputs@6
+#              inputs:
+#                ConnectedServiceNameSelector: 'ConnectedServiceNameARM'
+#                ConnectedServiceNameARM: $(azure-subscription)
+#                resourceGroupName: '$(resource-group-reciever-function)'
+#                prefix: 'arm-out-'
+#                whenLastDeploymentIsFailed: 'fail'
+#            - task: AzureCLI@2
+#              displayName: 'Azure CLI  Assign Key Vault permissions'
+#              inputs:
+#                azureSubscription: '$(azure-subscription)'
+#                scriptType: pscore
+#                scriptLocation: inlineScript
+#                inlineScript: |
+#                  $RESOURCE_GROUP = "$(resource-group-reciever-function)"
+#                  $SITE_NAME = "$(arm-out-functionAppName)"
+#                  $SHARED_KEY_VAULT = "$(SHARED_KEY_VAULT)"
+#                  $EVENT_KEY_VAULT = "$(EVENT_KEY_VAULT)"
+#                  # assign a managed identity to the site & give it access to read KeyVault Secrets
+#                  $principal = az webapp identity assign --resource-group $RESOURCE_GROUP --name $SITE_NAME | ConvertFrom-Json
+#                  az keyvault set-policy --name $SHARED_KEY_VAULT --object-id $principal.principalId --secret-permissions get list
+
+#                  az keyvault set-policy --name $EVENT_KEY_VAULT --object-id $principal.principalId --secret-permissions get list
+
+
+#                  $principal = az webapp identity assign --resource-group $RESOURCE_GROUP --name $SITE_NAME --slot staging | ConvertFrom-Json
+#                  az keyvault set-policy --name $SHARED_KEY_VAULT --object-id $principal.principalId --secret-permissions get list
+
+#                  az keyvault set-policy --name $EVENT_KEY_VAULT --object-id $principal.principalId --secret-permissions get list
+
+#                addSpnToEnvironment: true
+#                useGlobalConfig: true
+#            - task: AzureFunctionApp@1
+#              inputs:
+#                azureSubscription: $(azure-subscription)
+#                appType: 'functionApp'
+#                appName: '$(arm-out-functionAppName)'
+#                deployToSlotOrASE: true
+#                resourceGroupName: '$(resource-group-reciever-function)'
+#                slotName: 'staging'
+#                package: '$(Pipeline.Workspace)/drop/*.zip'
+#                deploymentMethod: 'zipDeploy'
+#            - task: AzureAppServiceManage@0
+#              inputs:
+#                azureSubscription: $(azure-subscription)
+#                Action: 'Swap Slots'
+#                WebAppName: '$(arm-out-functionAppName)'
+#                ResourceGroupName: '$(resource-group-reciever-function)'
+#                SourceSlot: 'staging'
+

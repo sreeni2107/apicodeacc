@@ -1,0 +1,176 @@
+# Node.js with webpack
+# Build a Node.js project using the webpack CLI.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - development
+
+variables:
+  - group: Envision2021-Env-CONT
+  - name: CONTACT_EMAIL
+    value: msenvision@eventcore.com
+  - name: DEBUG_MAPS
+    value: true
+  - name: JSLL_APP_ID
+    value: a5dea3deff7f4c74a440c328866b2e9e-75f6e57b-edcf-4f84-a485-8262e75223ec-7601
+  - name: USE_TEST_DISCUSSIONS
+    value: true
+  - name: METADATA_TWITTER_CREATOR
+    value: '@Microsoft'
+  - name: METADATA_TWITTER_SITE
+    value: 'Microsoft Envision'
+  - name: METADATA_TWITTER_CARD
+    value: 'summary_large_image'
+  - name: METADATA_TWITTER_DESCRIPTION
+    value: 'Accenture, Avanade, and Microsoft present Microsoft Envision, the event where business leaders from across the globe connect with one another, share perspectives, and discuss what’s ahead in this era of digital disruption.'
+  - name: METADATA_TWITTER_TITLE
+    value: 'Microsoft Envision'
+  - name: METADATA_TWITTER_IMAGE
+    value: 'https://ms-envision.azureedge.net/envision/msenvision_social.png'
+  - name: METADATA_TWITTER_URL
+    value: 'https://envision.microsoft.com'
+  - name: METADATA_OG_TYPE
+    value: 'website'
+  - name: METADATA_OG_SITE_NAME
+    value: 'Microsoft Envision'
+  - name: METADATA_OG_DESCRIPTION
+    value: 'Accenture, Avanade, and Microsoft present Microsoft Envision, the event where business leaders from across the globe connect with one another, share perspectives, and discuss what’s ahead in this era of digital disruption.'
+  - name: METADATA_OG_TITLE
+    value: 'Microsoft Envision'
+  - name: METADATA_OG_IMAGE
+    value: 'https://ms-envision.azureedge.net/envision/msenvision_social.png'
+  - name: METADATA_OG_URL
+    value: 'https://envision.microsoft.com'
+  - name: METADATA_DESCRIPTION
+    value: 'Accenture, Avanade, and Microsoft present Microsoft Envision, the event where business leaders from across the globe connect with one another, share perspectives, and discuss what’s ahead in this era of digital disruption.'
+  - name: METADATA_KEYWORDS
+    value: 'Accenture, Avanade, Microsoft, Envision, Microsoft Envision, Business Leaders, BDM Events, Microsoft Events, Accenture events, Avanade events, CEO events'
+  - name: METADATA_TITLE
+    value: 'Microsoft Envision'
+  - name: METADATA_CANONICAL
+    value: 'https://envision.microsoft.com'
+  - name: USE_CUSTOM_ANONYMOUS_NAVIGATION
+    value: true
+  - name: cdn-base
+    value: 'https://ms-envision.azureedge.net'
+  - name: 'CDN_URL'
+    value: '$(cdn-base)/$(site-name)-$(environment)/'
+  - name: NODE_MODULES_CACHE_FOLDER
+    value: $(System.DefaultWorkingDirectory)/node_modules
+  - name: NODE_ENV
+    value: cont
+
+stages:
+  - stage: 'PackageClient'
+    jobs:
+      - job: metaGeneratorCont
+        variables:
+          - group: Envision2021-Env-CONT
+        steps:
+          - checkout: none
+          - bash: echo "##vso[task.setVariable variable=leg;isOutput=true]'$(environment)':{'TARGET_ENV':'$(environment)', 'INSIGHTS_KEY':'$(insights-key)', 'api-custom-dns':'$(api-custom-dns)', 'ALLOW_CONFIGURABLE_ANONYMOUS_CHECKS':'$(ALLOW_CONFIGURABLE_ANONYMOUS_CHECKS)', 'PATHS_REQUIRING_TOOLS_SCOPE':'$(PATHS_REQUIRING_TOOLS_SCOPE)', 'CDN_URL':'$(CDN_URL)'}"
+            name: step
+      # - job: metaGeneratorUat
+        # variables:
+          # - group: Envision2021-Env-UAT
+        # steps:
+          # - checkout: none
+          # - bash: echo "##vso[task.setVariable variable=leg;isOutput=true]'$(environment)':{'TARGET_ENV':'$(environment)', 'INSIGHTS_KEY':'$(insights-key)', 'api-custom-dns':'$(api-custom-dns)', 'ALLOW_CONFIGURABLE_ANONYMOUS_CHECKS':'$(ALLOW_CONFIGURABLE_ANONYMOUS_CHECKS)', 'PATHS_REQUIRING_TOOLS_SCOPE':'$(PATHS_REQUIRING_TOOLS_SCOPE)', 'CDN_URL':'$(CDN_URL)'}"
+            # name: step
+      # - job: metaGeneratorProd
+        # variables:
+          # - group: Envision2021-Env-PROD
+        # steps:
+          # - checkout: none
+          # - bash: echo "##vso[task.setVariable variable=leg;isOutput=true]'$(environment)':{'TARGET_ENV':'$(environment)', 'INSIGHTS_KEY':'$(insights-key)', 'api-custom-dns':'$(api-custom-dns)', 'DEBUG_MAPS':false, 'USE_TEST_DISCUSSIONS':false, 'ALLOW_CONFIGURABLE_ANONYMOUS_CHECKS':'$(ALLOW_CONFIGURABLE_ANONYMOUS_CHECKS)', 'PATHS_REQUIRING_TOOLS_SCOPE':'$(PATHS_REQUIRING_TOOLS_SCOPE)', 'CDN_URL':'$(CDN_URL)'}"
+            # name: step
+      - job: metaCombiner
+        dependsOn:
+          - metaGeneratorCont
+          # - metaGeneratorUat
+          # - metaGeneratorProd
+        variables:
+          - name: cont
+            value: $[ dependencies.metaGeneratorCont.outputs['step.leg'] ]
+          # - name: uat
+            # value: $[ dependencies.metaGeneratorUAT.outputs['step.leg'] ]
+          # - name: prod
+            # value: $[ dependencies.metaGeneratorProd.outputs['step.leg'] ]
+        steps:
+          - checkout: none
+          # - bash: echo "##vso[task.setVariable variable=legs;isOutput=true]{$(cont),$(uat),$(prod)}"
+          - bash: echo "##vso[task.setVariable variable=legs;isOutput=true]{$(cont)}"
+            name: matrix
+
+      - job: 'BuildPackage'
+        pool:
+          vmImage: 'ubuntu-latest'
+        dependsOn: metaCombiner
+        strategy:
+          matrix: $[ dependencies.metaCombiner.outputs['matrix.legs'] ]
+          maxParallel: 3
+        steps:
+          - checkout: self
+            clean: true
+            fetchDepth: 1
+            lfs: true
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '14.x'
+            displayName: 'Install Node.js'
+          - task: Cache@2
+            displayName: Cache node modules packages
+            inputs:
+              cacheHitVar: CACHE_RESTORED
+              key: yarn | $(Agent.OS) | yarn.lock
+              path: $(NODE_MODULES_CACHE_FOLDER)
+              restoreKeys: yarn | $(Agent.OS)
+
+          - script: yarn --frozen-lockfile
+            condition: ne(variables.CACHE_RESTORED, 'true')
+            displayName: 'restore dependencies with yarn'
+
+          - script: |
+              yarn copy-assets
+              yarn build
+            displayName: 'Build package'
+          - task: ArchiveFiles@2
+            displayName: 'Archive app package'
+            inputs:
+              rootFolderOrFile: '$(System.DefaultWorkingDirectory)/dist'
+              includeRootFolder: false
+              archiveFile: '$(Build.ArtifactStagingDirectory)/$(TARGET_ENV)/site.zip'
+          - task: ArchiveFiles@2
+            displayName: 'Archive Cypress Tests'
+            inputs:
+              rootFolderOrFile: '$(System.DefaultWorkingDirectory)/tests/end-to-end-tests'
+              includeRootFolder: false
+              archiveFile: '$(Build.ArtifactStagingDirectory)/$(TARGET_ENV)/cypress_tests.zip'
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish artifacts: drop'
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+              ArtifactName: drop
+              publishLocation: Container
+
+      - job: 'CopyScripts'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: CopyFiles@2
+            displayName: 'Copy Files to: $(Build.ArtifactStagingDirectory)/scripts'
+            inputs:
+              Contents: |
+                **/*.sh
+                **/*.ps1
+              TargetFolder: '$(Build.ArtifactStagingDirectory)/scripts'
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish artifacts: drop'
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+              ArtifactName: 'drop'
+              #publishLocation: Container

@@ -1,0 +1,111 @@
+# ASP.NET Core Build and deploy multistage pipeline
+trigger:
+  branches:
+   include:
+     - uat
+  paths:
+    include:
+    - .azure-cd-tier-one-envision-2021-receiver-functions.yml
+    - jobs/*
+    - scripts/*
+    - functions/*
+    - src/Intergen.EventTools.Core/*
+    - src/MSCorp.EventTools.DTA.Core/*
+    - src/MSCorp.EventTools.Ignite.Core/*
+    - src/MSCorp.EventTools.Inspire.Core/*
+    - src/MSCorp.EventTools.Include.Core/*
+    - src/MSCorp.EventTools.MBAS.Core/*
+    - src/MSCorp.EventTools.Build.Core/*
+    - src/MSCorp.EventTools.Envision.Core/*
+    - src/MSCorp.EventTools.Providers.EventCore.PDC/*
+    - src/MSCorp.EventTools.Providers.EventPoint/*
+    - src/MSCorp.Ignite.Common/*
+    - src/MSCorp.Ignite.Core/*
+    - src/MSCorp.Ignite.Domain/*
+
+variables:
+  - group: Envision2021-Env-UAT
+  - group: GlobalKeyVaultSettings
+  - name: buildConfiguration
+    value: 'Release'
+
+stages:
+- stage: Build
+  displayName: Build
+  jobs:
+  - job:
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - script: dotnet clean functions/Intergen.EventTools.Functions.sln
+        displayName: 'dotnet clean'
+      - script: dotnet restore functions/Intergen.EventTools.Functions.sln
+        displayName: 'dotnet restore'
+      - task: DotNetCoreCLI@2
+        displayName: dotnet publish
+        inputs:
+          command: 'publish'
+          publishWebProjects: false
+          projects: '**/Intergen.EventTools.AttendeeProcessor.Functions.csproj'
+          arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+          zipAfterPublish: true
+      - task: CopyFiles@2
+        displayName: Write scripts to artifacts
+        inputs:
+          SourceFolder: '$(System.DefaultWorkingDirectory)/scripts'
+          Contents: '**'
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/scripts'
+          OverWrite: true
+      - task: CopyFiles@2
+        displayName: Write templates to artifacts
+        inputs:
+          SourceFolder: '$(System.DefaultWorkingDirectory)/functions/Intergen.EventTools.SubscriberFunctions/Deploy'
+          Contents: '*.json'
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/templates'
+          OverWrite: true
+      - task: PublishBuildArtifacts@1
+        displayName: 'Publish Artifact: drop'
+
+- stage: release_staging_reciever
+  displayName: Release Staging Attendee Indexer
+  dependsOn: Build
+  variables:
+    - group: Envision2021-Env-UAT
+  jobs:
+  - deployment: deploy_uat_indexer
+    displayName: Deploy uat indexer
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: envision-2021-uat
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - template: jobs/.azure-deploy-indexer-function-app.yml
+              parameters:
+                azure_subscription: $(azure-subscription)
+                resource_group: $(resource-group)
+                resource_group_location: $(resource-group-location)
+                resource_group_location_abbr: $(resource-group-location-abbr)
+                event_name: $(eventName)
+                env: $(environment)
+                insights_key: $(insights-key)
+                servicebus_resource_group: $(service-bus-resource-group)
+                servicebus_namespace: $(eventAttendeeServiceBusNamespace)
+                servicebus_topic: $(eventAttendeeServiceBusTopic)
+                servicebus_connection: $(AttendeeIndexingServiceBusConnection)
+                site_name: $(site-name)
+                program_index_prefix: $(ProgramIndexPrefix)
+                index_prefix: $(IndexPrefix)
+                city_name: $(CITY)
+                region: $(resource-group-location)
+                session_speaker_queue: $(SessionSpeakerQueue)
+                public_search_service_name: $(search-name)
+                public_search_index_api_key: $(search-service-admin-key)
+                db_settings_database_name: $(cosmosDBName)
+                db_settings_store_name: $(DbSettingsStoreName)
+                db_settings_timeout_in_seconds: $(DbSettingsTimeoutInSeconds)
+                db_settings_file_name: $(defaultSettingsFile)
+                is_using_test_data: $(appsetting.IsUsingTestData)
+                shared_key_vault: '$(SHARED_KEY_VAULT)'
+                event_key_vault: '$(EVENT_KEY_VAULT)'

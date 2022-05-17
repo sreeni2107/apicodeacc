@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": null
+    },
+    "storageAccountPrefix": {
+      "value": null
+    },
+    "storageAccountType": {
+      "value": null
+    },
+    "functionAppPrefix": {
+      "value": null
+    },
+    "appInsightsProductionName": {
+      "value": null
+    },
+    "appInsightsStagingName": {
+      "value": null
+    },
+    "EventName": {
+      "value": null
+    },
+    "EventAttendeeQueue": {
+      "value": null
+    },
+    "EventAttendeeServiceBusTopic": {
+      "value": null
+    },
+    "CosmosDBName": {
+      "value": null
+    },
+    "CosmosDBCollectionName": {
+      "value": null
+    },
+    "CosmosDBPartitionKey": {
+      "value": null
+    },
+    "CosmosQueryGetAllRecordIds": {
+      "value": null
+    },
+    "PdcProfileUpdateQueue": {
+      "value": null
+    },
+    "UserConsentCosmosDBCollectionName": {
+      "value": null
+    },
+    "UserConsentDBPartitionKey": {
+      "value": null
+    },
+    "UserConsentReportQueue": {
+      "value": null
+    },
+    "SHARED_KEY_VAULT_NAME": {
+      "value": null
+    },
+    "EVENT_KEY_VAULT_NAME": {
+      "value": null
+    }
+  }
+}
